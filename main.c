@@ -37,3 +37,14 @@ typedef struct {
     int pageFaults;
     int algoritmo;
 } Simulador;
+
+Simulador* inicializarSimulador (int tamanhoPagina, int tamanhoMemoriaFisica) {
+    printf("Hello World");
+    return 0;
+}
+
+
+
+int main () {
+    printf("Hello World");
+}
