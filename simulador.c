@@ -1,3 +1,6 @@
+// Projeto: Simulador de Processos
+// Grupo: Bruno Gustavo Rocha - 10400926; Gabriel de Jesus Silva Rodrigues - 10409071; Gabriel Jun Ito - 10427610
+
 #include <stdio.h>
 #include <stdlib.h>
 
