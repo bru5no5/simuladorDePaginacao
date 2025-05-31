@@ -67,7 +67,7 @@ Processo* criar_processo(Simulador *sim , int tamanho_processo){
     Processo proc;
     proc.pid = sim->num_processos;
     proc.tamanho = tamanho_processo; 
-    proc.num_paginas = (tamanho_processo+1)/sim->tamanho_pagina; 
+    proc.num_paginas = (tamanho_processo + sim->tamanho_pagina - 1) / sim->tamanho_pagina; 
     proc.tabela_paginas = (Pagina *)malloc(sizeof(Pagina) * proc.num_paginas);
 
     for (int i = 0; i < proc.num_paginas; i++) {
@@ -83,6 +83,7 @@ Processo* criar_processo(Simulador *sim , int tamanho_processo){
     sim->processos[sim->num_processos] = proc;
     sim->num_processos++;
     printf("Processo %d criado: %d páginas (%d bytes)\n", proc.pid, proc.num_paginas, proc.tamanho);
+    return &sim->processos[proc.pid];
 }
 
 int substituir_pagina_fifo(Simulador *sim);
@@ -98,6 +99,7 @@ void extrair_pagina_deslocamento(Simulador *sim , int endereco_virtual , int *pa
 int verificar_pagina_presente(Simulador *sim , int pid , int pagina){
     return sim->processos[pid].tabela_paginas[pagina].presente;
 }
+
 // Carrega uma página na memória física
 // Retorna o número do frame onde a página foi carregada
 int carregar_pagina(Simulador *sim , int pid , int pagina){
@@ -112,9 +114,12 @@ int carregar_pagina(Simulador *sim , int pid , int pagina){
 
     if (frame == -1) {
         switch (sim->algoritmo) {
-            case 0:
-                frame = substituir_pagina_fifo(sim);
-                break;
+            case 0: frame = substituir_pagina_fifo(sim); break;
+            case 1: frame = substituir_pagina_lru(sim); break;
+            case 2: frame = substituir_pagina_clock(sim); break;
+            case 3: frame = substituir_pagina_random(sim); break;
+            case 4: frame = substituir_pagina_fifo(sim); break;
+            default: fprintf(stderr, "Algoritmo inválido!\n"); exit(EXIT_FAILURE);
         }
     }
 
@@ -136,8 +141,20 @@ int carregar_pagina(Simulador *sim , int pid , int pagina){
 // Traduz um endereço virtual para físico
 // Retorna o endereço físico ou -1 em caso de page fault
 int traduzir_endereco(Simulador *sim , int pid , int endereco_virtual){
+    if (pid < 0 || pid >= sim->num_processos) {
+        fprintf(stderr, "PID inválido!\n");
+        return -1;
+    }
+
     int pagina, deslocamento;
     extrair_pagina_deslocamento(sim, endereco_virtual, &pagina, &deslocamento);
+
+    if (pagina >= sim->processos[pid].num_paginas) {
+        fprintf(stderr, "Endereço virtual fora do espaço do processo!\n");
+        return -1;
+    }
+
+    sim->tempo_atual++;
     sim->total_acessos++;
 
     if (!verificar_pagina_presente(sim, pid, pagina)) {
@@ -146,6 +163,7 @@ int traduzir_endereco(Simulador *sim , int pid , int endereco_virtual){
     }
 
     int frame = sim->processos[pid].tabela_paginas[pagina].frame;
+    registrar_acesso(sim, pid, pagina, 0);
     return frame * sim->tamanho_pagina + deslocamento;
 }
 
@@ -233,6 +251,7 @@ void registrar_acesso(Simulador *sim , int pid , int pagina , int tipo_acesso){
 }
 
 // Executa a simulação com uma sequência de acessos à memória
+// Executa a simulação com uma sequência de acessos à memória
 void executar_simulacao(Simulador *sim , int algoritmo){
     sim->algoritmo = algoritmo;
 
@@ -241,29 +260,35 @@ void executar_simulacao(Simulador *sim , int algoritmo){
     printf("Tamanho da memória física: %d bytes (%d KB)\n", sim->tamanho_memoria_fisica, sim->tamanho_memoria_fisica / 1024);
     printf("Número de frames: %d\n", sim->memoria.num_frames);
     printf("Algoritmo de substituição: ");
-
     switch (algoritmo){
         case 0: printf("FIFO\n"); break;
         case 1: printf("LRU\n"); break;
         case 2: printf("CLOCK\n"); break;
         case 3: printf("RANDOM\n"); break;
         case 4: printf("CUSTOM\n"); break;
+        default: printf("Desconhecido\n"); break;
     }
 
     printf("======== INÍCIO DA SIMULAÇÃO ========\n\n");
-    
-    for (int i = 0; i < sim->num_processos; i++) {
-        Processo *p = &sim->processos[i];
-        int pid = p->pid; 
 
-        for (int j = 0; j < p->num_paginas && j < 4; j++) {
-            int endereco_virtual = j * sim->tamanho_pagina; 
-            acessar_memoria(sim, pid, endereco_virtual);
+    // Simulação simples: cada processo acessa algumas páginas
+    for (int pid = 0; pid < sim->num_processos; pid++) {
+        Processo *proc = &sim->processos[pid];
+        printf(">> Acessos do Processo %d:\n", pid + 1);
+
+        for (int i = 0; i < proc->num_paginas; i++) {
+            int endereco_virtual = i * sim->tamanho_pagina;
+
+            int endereco_fisico = traduzir_endereco(sim, pid, endereco_virtual);
+            registrar_acesso(sim, pid, i, 0); // 0 = leitura
+
+            printf("Acesso à página %d (endereço virtual %d) => endereço físico %d\n", i, endereco_virtual, endereco_fisico);
+            
+            sim->tempo_atual++;
+            exibir_memoria_fisica(sim);
         }
 
-        if (p->num_paginas > 0) {
-            acessar_memoria(sim, pid, 0); 
-        }
+        printf("\n");
     }
 
     exibir_estatisticas(sim);
